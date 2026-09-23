@@ -126,7 +126,7 @@ func (m tuiModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	if key, ok := message.(tea.KeyMsg); ok && m.list.FilterState() == list.Unfiltered {
+	if key, ok := message.(tea.KeyMsg); ok && m.list.FilterState() != list.Filtering {
 		if m.busy && key.String() != "ctrl+c" && key.String() != "q" {
 			return m, nil
 		}
@@ -211,18 +211,19 @@ func (m tuiModel) items() ([]list.Item, error) {
 
 func (m *tuiModel) refreshItems() error {
 	index := m.list.Index()
+	filterApplied := m.list.FilterState() == list.FilterApplied
+	filterText := m.list.FilterInput.Value()
 	items, err := m.items()
 	if err != nil {
 		return err
 	}
-	command := m.list.SetItems(items)
-	if command != nil {
-		_ = command
-	}
-	m.setListTitle(len(items))
-	if len(items) > 0 {
+	_ = m.list.SetItems(items)
+	if filterApplied {
+		m.list.SetFilterText(filterText)
+	} else if len(items) > 0 {
 		m.list.Select(min(index, len(items)-1))
 	}
+	m.setListTitle(len(items))
 	return nil
 }
 
