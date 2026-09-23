@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Agent-facing CLI over the local review store. Used by the `address-review`
+ * Agent-facing CLI over the local review store. Used by the `worktree-review-vscode`
  * skill so an agent never hand-edits threads.json.
  *
  *   review list [--open|--awaiting|--all] [--json]

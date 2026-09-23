@@ -1,11 +1,17 @@
 ---
-name: address-review
-description: Read the human's inline review comments in a git worktree, act on each one, and reply in the thread. Use when the user says "address the review", "address my comments", "handle the review comments", "/address-review", or points at review threads in a worktree. Also use for an adversarial pass where you add your own review comments. Threads are the local pre-publication discussion created by the Git Worktree Diff extension.
+name: worktree-review-vscode
+description: Read and respond to existing inline comments stored by Git Worktree Diff in a local git worktree. Invoke only when the user explicitly says they left comments in the worktree, left comments locally in GWQ or Git Worktree Diff, or points to local `.worktree-review` threads. Do not invoke for ordinary code reviews, GitHub pull-request reviews, or GitHub review comments; those use the GitHub review workflow.
 ---
 
-# Address review
+# Worktree review for VS Code
 
 Set `SKILL_ROOT` to the absolute directory containing this `SKILL.md` before running any packaged helper. This contract is independent of the agent harness.
+
+## Scope gate
+
+Use this skill only for existing local comments created through Git Worktree Diff. The user must explicitly mention comments left in the worktree, comments left locally in GWQ, Git Worktree Diff, or `.worktree-review`.
+
+Do not use this skill for a general review request, a GitHub pull request, or GitHub review comments. Those are GitHub-only review workflows.
 
 A worktree carries a local PR-style discussion at `<worktree>/.worktree-review/threads.json`:
 inline comment threads anchored to file and line, written by the reviewer in the
@@ -107,28 +113,6 @@ result in the reply. Do not write "fixed" for a change you did not run.
 Every `reply`, `add` and `status` rewrites `.worktree-review/DISCUSSION.md`. Run
 `node "$REVIEW" --dir "$WT" render` if you edited the store any other way.
 
-## Adversarial pass
-
-When the user asks for a review instead of a response to one, raise your own
-threads. Several agents can review the same worktree at once; each comment
-carries its author, so the thread shows who said what.
-
-```sh
-node "$REVIEW" --dir "$WT" add --file src/thing.js --line 42 --end 48 \
-  --agent "$AGENT_HARNESS" --model "$AGENT_MODEL" --action review --body - <<'EOF'
-This loop reads the file on every iteration. Move the read above the loop.
-EOF
-```
-
-Guidance for an adversarial pass:
-
-- Review the diff against the base branch, not the whole repo. Get it with
-  `git diff $(git merge-base origin/main HEAD)`.
-- One thread per problem, anchored to the line that has to change.
-- State the failure, not a preference. "This throws when `files` is empty" beats
-  "this could be cleaner".
-- Do not raise a thread another agent already raised. Check `list --all` first.
-- Say plainly when you find nothing, rather than padding the thread count.
 
 ## Reply style
 
