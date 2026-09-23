@@ -15,7 +15,7 @@ import (
 
 type listedSkill struct {
 	skillman.Skill
-	Harnesses map[string]skillman.InstallState `json:"harnesses"`
+	State skillman.SkillState `json:"state"`
 }
 
 func main() {
@@ -133,15 +133,11 @@ func discoverStateRepo(ghqRoot string) (string, error) {
 func printCatalog(catalog skillman.Catalog, manager *skillman.Manager) error {
 	listed := make([]listedSkill, 0, len(catalog.Skills))
 	for _, skill := range catalog.Skills {
-		states := make(map[string]skillman.InstallState, len(manager.Harnesses))
-		for _, harness := range manager.Harnesses {
-			state, err := manager.State(skill, harness)
-			if err != nil {
-				return err
-			}
-			states[harness.ID] = state
+		state, err := manager.SkillState(skill)
+		if err != nil {
+			return err
 		}
-		listed = append(listed, listedSkill{Skill: skill, Harnesses: states})
+		listed = append(listed, listedSkill{Skill: skill, State: state})
 	}
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
@@ -157,19 +153,18 @@ func checkLock(repoRoot string, catalog skillman.Catalog, manager *skillman.Mana
 	enabled := make(map[string]bool)
 	for _, skill := range catalog.Skills {
 		available[skill.Name] = skill
-		for _, harness := range manager.Harnesses {
-			state, err := manager.State(skill, harness)
-			if err != nil {
-				return err
-			}
-			if state.Enabled {
-				enabled[skill.Name] = true
-				if !state.Linked {
-					return fmt.Errorf("enabled skill %s in %s is not linked to its ghq source", skill.Name, harness.Name)
-				}
-			}
+		state, err := manager.SkillState(skill)
+		if err != nil {
+			return err
 		}
-		if enabled[skill.Name] {
+		if state.Partial {
+			return fmt.Errorf("skill %s is installed in only some harnesses; run skillman --reconcile", skill.Name)
+		}
+		if state.Enabled {
+			if !state.Linked {
+				return fmt.Errorf("enabled skill %s is not linked to its ghq source", skill.Name)
+			}
+			enabled[skill.Name] = true
 			if _, ok := lock.Skills[skill.Name]; !ok {
 				return fmt.Errorf("enabled skill %s is missing from skills-lock.json", skill.Name)
 			}

@@ -12,15 +12,12 @@ import (
 )
 
 type skillItem struct {
-	skill  skillman.Skill
-	states map[string]skillman.InstallState
-	active string
+	skill skillman.Skill
+	state skillman.SkillState
 }
 
 func (i skillItem) Title() string {
-	shared := stateMark(i.states["universal"], i.active == "universal")
-	claude := stateMark(i.states["claude-code"], i.active == "claude-code")
-	return fmt.Sprintf("U%s C%s  %s  [%s@%s]", shared, claude, i.skill.Name, i.skill.Repository, displayRef(i.skill.Ref))
+	return fmt.Sprintf("%s  %s  [%s@%s]", stateMark(i.state), i.skill.Name, i.skill.Repository, displayRef(i.skill.Ref))
 }
 
 func (i skillItem) Description() string { return i.skill.Description }
@@ -28,17 +25,14 @@ func (i skillItem) FilterValue() string {
 	return i.skill.Name + " " + i.skill.Repository + " " + i.skill.Description
 }
 
-func stateMark(state skillman.InstallState, active bool) string {
-	mark := "·"
-	if state.Enabled && state.Linked {
-		mark = "✓"
-	} else if state.Enabled {
-		mark = "!"
+func stateMark(state skillman.SkillState) string {
+	if state.Partial || (state.Enabled && !state.Linked) {
+		return "!"
 	}
-	if active {
-		return "[" + mark + "]"
+	if state.Enabled {
+		return "✓"
 	}
-	return " " + mark + " "
+	return "·"
 }
 
 func displayRef(ref string) string {
@@ -46,6 +40,25 @@ func displayRef(ref string) string {
 		return "default"
 	}
 	return ref
+}
+
+type viewMode uint8
+
+const (
+	viewEnabled viewMode = iota
+	viewDisabled
+	viewAll
+)
+
+func (v viewMode) String() string {
+	switch v {
+	case viewDisabled:
+		return "Disabled"
+	case viewAll:
+		return "All"
+	default:
+		return "Enabled"
+	}
 }
 
 type operationDone struct {
@@ -58,7 +71,7 @@ type tuiModel struct {
 	catalog  skillman.Catalog
 	manager  *skillman.Manager
 	list     list.Model
-	active   int
+	view     viewMode
 	busy     bool
 	status   string
 	repoRoot string
@@ -70,7 +83,7 @@ func newTUIModel(catalog skillman.Catalog, manager *skillman.Manager, repoRoot, 
 	model := tuiModel{
 		catalog:  catalog,
 		manager:  manager,
-		active:   0,
+		view:     viewEnabled,
 		repoRoot: repoRoot,
 		ghqRoot:  ghqRoot,
 	}
@@ -83,6 +96,7 @@ func newTUIModel(catalog skillman.Catalog, manager *skillman.Manager, repoRoot, 
 	model.list.SetShowStatusBar(true)
 	model.list.SetFilteringEnabled(true)
 	model.list.Styles.Title = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230")).Background(lipgloss.Color("62")).Padding(0, 1)
+	model.setListTitle(len(items))
 	return model, nil
 }
 
@@ -117,9 +131,9 @@ func (m tuiModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch key.String() {
-		case "tab", "right", "left":
-			m.active = (m.active + 1) % len(m.manager.Harnesses)
-			m.status = "active harness: " + m.manager.Harnesses[m.active].Name
+		case "tab":
+			m.view = (m.view + 1) % 3
+			m.status = "view: " + m.view.String()
 			_ = m.refreshItems()
 			return m, nil
 		case " ":
@@ -127,56 +141,17 @@ func (m tuiModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			if !ok {
 				return m, nil
 			}
-			harness := m.manager.Harnesses[m.active]
 			m.busy = true
-			m.status = "updating " + item.skill.Name
-			return m, runOperation(func() error {
-				if item.states[harness.ID].Enabled {
-					return m.manager.Disable(context.Background(), item.skill, harness)
-				}
-				return m.manager.Enable(context.Background(), item.skill, harness)
-			}, "updated "+item.skill.Name, false)
-		case "a":
-			item, ok := m.selectedItem()
-			if !ok {
-				return m, nil
+			if item.state.Enabled || item.state.Partial {
+				m.status = "disabling " + item.skill.Name
+				return m, runOperation(func() error {
+					return m.manager.Disable(context.Background(), item.skill)
+				}, "disabled "+item.skill.Name, false)
 			}
-			m.busy = true
+			m.status = "enabling " + item.skill.Name
 			return m, runOperation(func() error {
-				for _, harness := range m.manager.Harnesses {
-					state, err := m.manager.State(item.skill, harness)
-					if err != nil {
-						return err
-					}
-					if !state.Enabled {
-						if err := m.manager.Enable(context.Background(), item.skill, harness); err != nil {
-							return err
-						}
-					}
-				}
-				return nil
-			}, "enabled "+item.skill.Name+" everywhere", false)
-		case "d":
-			item, ok := m.selectedItem()
-			if !ok {
-				return m, nil
-			}
-			m.busy = true
-			return m, runOperation(func() error {
-				for i := len(m.manager.Harnesses) - 1; i >= 0; i-- {
-					harness := m.manager.Harnesses[i]
-					state, err := m.manager.State(item.skill, harness)
-					if err != nil {
-						return err
-					}
-					if state.Enabled {
-						if err := m.manager.Disable(context.Background(), item.skill, harness); err != nil {
-							return err
-						}
-					}
-				}
-				return nil
-			}, "disabled "+item.skill.Name+" everywhere", false)
+				return m.manager.Enable(context.Background(), item.skill)
+			}, "enabled "+item.skill.Name, false)
 		case "r":
 			item, ok := m.selectedItem()
 			if !ok {
@@ -200,12 +175,11 @@ func (m tuiModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m tuiModel) View() string {
-	active := m.manager.Harnesses[m.active].Name
 	busy := ""
 	if m.busy {
 		busy = " | busy"
 	}
-	footer := fmt.Sprintf("active: %s%s | space toggle | tab harness | a all on | d all off | r sync source | R sync all | / filter", active, busy)
+	footer := fmt.Sprintf("view: %s%s | space toggle | tab view | r sync source | R sync all | / search", m.view, busy)
 	if m.status != "" {
 		footer += "\n" + truncate(m.status, 140)
 	}
@@ -220,15 +194,17 @@ func (m tuiModel) selectedItem() (skillItem, bool) {
 func (m tuiModel) items() ([]list.Item, error) {
 	items := make([]list.Item, 0, len(m.catalog.Skills))
 	for _, skill := range m.catalog.Skills {
-		states := make(map[string]skillman.InstallState, len(m.manager.Harnesses))
-		for _, harness := range m.manager.Harnesses {
-			state, err := m.manager.State(skill, harness)
-			if err != nil {
-				return nil, err
-			}
-			states[harness.ID] = state
+		state, err := m.manager.SkillState(skill)
+		if err != nil {
+			return nil, err
 		}
-		items = append(items, skillItem{skill: skill, states: states, active: m.manager.Harnesses[m.active].ID})
+		if m.view == viewEnabled && !state.Enabled && !state.Partial {
+			continue
+		}
+		if m.view == viewDisabled && (state.Enabled || state.Partial) {
+			continue
+		}
+		items = append(items, skillItem{skill: skill, state: state})
 	}
 	return items, nil
 }
@@ -243,10 +219,15 @@ func (m *tuiModel) refreshItems() error {
 	if command != nil {
 		_ = command
 	}
+	m.setListTitle(len(items))
 	if len(items) > 0 {
 		m.list.Select(min(index, len(items)-1))
 	}
 	return nil
+}
+
+func (m *tuiModel) setListTitle(count int) {
+	m.list.Title = fmt.Sprintf("skillman · %s (%d)", m.view, count)
 }
 
 func runOperation(operation func() error, success string, reload bool) tea.Cmd {

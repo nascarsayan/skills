@@ -21,6 +21,12 @@ type InstallState struct {
 	Target  string `json:"target,omitempty"`
 }
 
+type SkillState struct {
+	Enabled bool `json:"enabled"`
+	Linked  bool `json:"linked"`
+	Partial bool `json:"partial"`
+}
+
 type Manager struct {
 	RepoRoot  string
 	Harnesses []Harness
@@ -72,98 +78,93 @@ func (m *Manager) State(skill Skill, harness Harness) (InstallState, error) {
 	return state, nil
 }
 
-func (m *Manager) Enable(ctx context.Context, skill Skill, harness Harness) error {
-	before := make(map[string]InstallState, len(m.Harnesses))
-	for _, configured := range m.Harnesses {
-		state, err := m.State(skill, configured)
+func (m *Manager) SkillState(skill Skill) (SkillState, error) {
+	enabled := 0
+	linked := 0
+	for _, harness := range m.Harnesses {
+		state, err := m.State(skill, harness)
 		if err != nil {
+			return SkillState{}, err
+		}
+		if state.Enabled {
+			enabled++
+		}
+		if state.Enabled && state.Linked {
+			linked++
+		}
+	}
+	allEnabled := len(m.Harnesses) > 0 && enabled == len(m.Harnesses)
+	return SkillState{
+		Enabled: allEnabled,
+		Linked:  allEnabled && linked == len(m.Harnesses),
+		Partial: enabled > 0 && !allEnabled,
+	}, nil
+}
+
+func (m *Manager) Enable(ctx context.Context, skill Skill) error {
+	for _, harness := range m.Harnesses {
+		if _, err := m.Runner.Run(ctx, m.RepoRoot, "npx", "--yes", "skills", "add", skill.InstallSource(), "--skill", skill.Name, "--global", "--agent", harness.AgentID, "--yes"); err != nil {
+			_, _ = m.Runner.Run(ctx, m.RepoRoot, "npx", "--yes", "skills", "remove", skill.Name, "--global", "--yes")
 			return err
 		}
-		before[configured.ID] = state
 	}
-
-	if _, err := m.Runner.Run(ctx, m.RepoRoot, "npx", "--yes", "skills", "add", skill.InstallSource(), "--skill", skill.Name, "--global", "--agent", harness.AgentID, "--yes"); err != nil {
-		return err
-	}
-
-	for _, configured := range m.Harnesses {
-		if configured.ID == harness.ID || before[configured.ID].Enabled {
-			if err := replaceWithSymlink(filepath.Join(configured.Path, skill.Name), skill.Directory); err != nil {
-				return err
-			}
-		}
-	}
-	if harness.ID != "universal" && !before["universal"].Enabled {
-		if err := removeManagedPath(filepath.Join(harnessByID(m.Harnesses, "universal").Path, skill.Name)); err != nil {
+	for _, harness := range m.Harnesses {
+		if err := replaceWithSymlink(filepath.Join(harness.Path, skill.Name), skill.Directory); err != nil {
 			return err
 		}
 	}
 	return SetLocalLockSkill(m.RepoRoot, skill, true)
 }
 
-func (m *Manager) Disable(ctx context.Context, skill Skill, harness Harness) error {
-	states := make(map[string]InstallState, len(m.Harnesses))
-	remaining := false
-	for _, configured := range m.Harnesses {
-		state, err := m.State(skill, configured)
+func (m *Manager) Disable(ctx context.Context, skill Skill) error {
+	installed := false
+	for _, harness := range m.Harnesses {
+		state, err := m.State(skill, harness)
 		if err != nil {
 			return err
 		}
-		states[configured.ID] = state
-		if configured.ID != harness.ID && state.Enabled {
-			remaining = true
-		}
+		installed = installed || state.Enabled
 	}
-	if !states[harness.ID].Enabled {
-		return nil
-	}
-
-	if !remaining {
+	if installed {
 		if _, err := m.Runner.Run(ctx, m.RepoRoot, "npx", "--yes", "skills", "remove", skill.Name, "--global", "--yes"); err != nil {
 			return err
 		}
-		for _, configured := range m.Harnesses {
-			if err := removeManagedPath(filepath.Join(configured.Path, skill.Name)); err != nil {
-				return err
-			}
-		}
-		return SetLocalLockSkill(m.RepoRoot, skill, false)
 	}
-
-	for _, configured := range m.Harnesses {
-		if configured.ID != harness.ID && states[configured.ID].Enabled {
-			if err := replaceWithSymlink(filepath.Join(configured.Path, skill.Name), skill.Directory); err != nil {
-				return err
-			}
+	for _, harness := range m.Harnesses {
+		if err := removeManagedPath(filepath.Join(harness.Path, skill.Name)); err != nil {
+			return err
 		}
 	}
-	return removeManagedPath(filepath.Join(harness.Path, skill.Name))
+	return SetLocalLockSkill(m.RepoRoot, skill, false)
 }
 
 func (m *Manager) Reconcile(catalog Catalog) (int, error) {
 	linked := 0
 	enabled := make([]Skill, 0)
 	for _, skill := range catalog.Skills {
-		isEnabled := false
+		installed := false
+		states := make(map[string]InstallState, len(m.Harnesses))
 		for _, harness := range m.Harnesses {
 			state, err := m.State(skill, harness)
 			if err != nil {
 				return linked, err
 			}
-			if !state.Enabled {
+			states[harness.ID] = state
+			installed = installed || state.Enabled
+		}
+		if !installed {
+			continue
+		}
+		for _, harness := range m.Harnesses {
+			if states[harness.ID].Enabled && states[harness.ID].Linked {
 				continue
 			}
-			isEnabled = true
-			if !state.Linked {
-				if err := replaceWithSymlink(filepath.Join(harness.Path, skill.Name), skill.Directory); err != nil {
-					return linked, err
-				}
-				linked++
+			if err := replaceWithSymlink(filepath.Join(harness.Path, skill.Name), skill.Directory); err != nil {
+				return linked, err
 			}
+			linked++
 		}
-		if isEnabled {
-			enabled = append(enabled, skill)
-		}
+		enabled = append(enabled, skill)
 	}
 	if err := ReplaceLocalLock(m.RepoRoot, enabled); err != nil {
 		return linked, err
@@ -226,13 +227,4 @@ func removeManagedPath(path string) error {
 		return fmt.Errorf("refusing to remove non-skill directory %s", path)
 	}
 	return os.RemoveAll(path)
-}
-
-func harnessByID(harnesses []Harness, id string) Harness {
-	for _, harness := range harnesses {
-		if harness.ID == id {
-			return harness
-		}
-	}
-	return Harness{}
 }
