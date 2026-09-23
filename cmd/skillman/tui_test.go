@@ -82,6 +82,15 @@ func TestTUISortsByNameAndRepositoryAcrossFilteredViews(t *testing.T) {
 
 	model.list.SetFilterText("repo")
 	assertItemOrder(t, model.list.VisibleItems(), []string{"beta", "zebra", "alpha"})
+	updated, _ = model.Update(tea.KeyMsg{Runes: []rune{'s'}, Type: tea.KeyRunes})
+	model = updated.(tuiModel)
+	if model.sort != sortName || model.list.FilterState() != list.FilterApplied {
+		t.Fatalf("filtered sort did not switch to Name: sort=%s filter=%s", model.sort, model.list.FilterState())
+	}
+	assertItemOrder(t, model.list.VisibleItems(), []string{"alpha", "beta", "zebra"})
+	updated, _ = model.Update(tea.KeyMsg{Runes: []rune{'s'}, Type: tea.KeyRunes})
+	model = updated.(tuiModel)
+	assertItemOrder(t, model.list.VisibleItems(), []string{"beta", "zebra", "alpha"})
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
 	model = updated.(tuiModel)
 	if model.sort != sortRepository || model.list.FilterState() != list.FilterApplied {
