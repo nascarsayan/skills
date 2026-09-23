@@ -40,7 +40,68 @@ func TestTUIStartsEnabledAndCyclesViews(t *testing.T) {
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
 	model = updated.(tuiModel)
-	assertTUIView(t, model, viewAll, 2, "enabled")
+	assertTUIView(t, model, viewAll, 2, "disabled")
+}
+
+func TestTUISortsByNameAndRepositoryAcrossFilteredViews(t *testing.T) {
+	root := t.TempDir()
+	harnesses := []skillman.Harness{
+		{ID: "universal", Path: filepath.Join(root, ".agents", "skills")},
+		{ID: "claude-code", Path: filepath.Join(root, ".claude", "skills")},
+	}
+	zebra := tuiTestSkill(t, root, "zebra")
+	zebra.Repository = "alpha/repo"
+	alpha := tuiTestSkill(t, root, "alpha")
+	alpha.Repository = "zeta/repo"
+	beta := tuiTestSkill(t, root, "beta")
+	beta.Repository = "alpha/repo"
+	skills := []skillman.Skill{zebra, alpha, beta}
+	for _, harness := range harnesses {
+		if err := os.MkdirAll(harness.Path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, skill := range skills {
+			if err := os.Symlink(skill.Directory, filepath.Join(harness.Path, skill.Name)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	manager := &skillman.Manager{Harnesses: harnesses}
+	model, err := newTUIModel(skillman.Catalog{Skills: skills}, manager, root, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertItemOrder(t, model.list.Items(), []string{"alpha", "beta", "zebra"})
+
+	updated, _ := model.Update(tea.KeyMsg{Runes: []rune{'s'}, Type: tea.KeyRunes})
+	model = updated.(tuiModel)
+	if model.sort != sortRepository {
+		t.Fatalf("sort is %s, want Repository", model.sort)
+	}
+	assertItemOrder(t, model.list.Items(), []string{"beta", "zebra", "alpha"})
+
+	model.list.SetFilterText("repo")
+	assertItemOrder(t, model.list.VisibleItems(), []string{"beta", "zebra", "alpha"})
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(tuiModel)
+	if model.sort != sortRepository || model.list.FilterState() != list.FilterApplied {
+		t.Fatalf("sort or filter was lost in Disabled view: sort=%s filter=%s", model.sort, model.list.FilterState())
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(tuiModel)
+	assertItemOrder(t, model.list.VisibleItems(), []string{"beta", "zebra", "alpha"})
+}
+
+func assertItemOrder(t *testing.T, items []list.Item, expected []string) {
+	t.Helper()
+	if len(items) != len(expected) {
+		t.Fatalf("got %d items, want %d", len(items), len(expected))
+	}
+	for index, item := range items {
+		if name := item.(skillItem).skill.Name; name != expected[index] {
+			t.Fatalf("item %d is %s, want %s", index, name, expected[index])
+		}
+	}
 }
 
 type tuiRunner struct{}

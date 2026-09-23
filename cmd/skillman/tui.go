@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -61,6 +62,20 @@ func (v viewMode) String() string {
 	}
 }
 
+type sortMode uint8
+
+const (
+	sortName sortMode = iota
+	sortRepository
+)
+
+func (s sortMode) String() string {
+	if s == sortRepository {
+		return "Repository"
+	}
+	return "Name"
+}
+
 type operationDone struct {
 	message string
 	err     error
@@ -72,6 +87,7 @@ type tuiModel struct {
 	manager  *skillman.Manager
 	list     list.Model
 	view     viewMode
+	sort     sortMode
 	busy     bool
 	status   string
 	repoRoot string
@@ -93,6 +109,7 @@ func newTUIModel(catalog skillman.Catalog, manager *skillman.Manager, repoRoot, 
 	}
 	model.list = list.New(items, delegate, 120, 32)
 	model.list.Title = "skillman"
+	model.list.Filter = list.UnsortedFilter
 	model.list.SetShowStatusBar(true)
 	model.list.SetFilteringEnabled(true)
 	model.list.Styles.Title = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230")).Background(lipgloss.Color("62")).Padding(0, 1)
@@ -134,6 +151,11 @@ func (m tuiModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "tab":
 			m.view = (m.view + 1) % 3
 			m.status = "view: " + m.view.String()
+			_ = m.refreshItems()
+			return m, nil
+		case "s":
+			m.sort = (m.sort + 1) % 2
+			m.status = "sort: " + m.sort.String()
 			_ = m.refreshItems()
 			return m, nil
 		case " ":
@@ -179,7 +201,7 @@ func (m tuiModel) View() string {
 	if m.busy {
 		busy = " | busy"
 	}
-	footer := fmt.Sprintf("view: %s%s | space toggle | tab view | r sync source | R sync all | / search", m.view, busy)
+	footer := fmt.Sprintf("view: %s | sort: %s%s | space toggle | tab view | s sort | r sync source | R sync all | / search", m.view, m.sort, busy)
 	if m.status != "" {
 		footer += "\n" + truncate(m.status, 140)
 	}
@@ -192,7 +214,7 @@ func (m tuiModel) selectedItem() (skillItem, bool) {
 }
 
 func (m tuiModel) items() ([]list.Item, error) {
-	items := make([]list.Item, 0, len(m.catalog.Skills))
+	skills := make([]skillItem, 0, len(m.catalog.Skills))
 	for _, skill := range m.catalog.Skills {
 		state, err := m.manager.SkillState(skill)
 		if err != nil {
@@ -204,7 +226,25 @@ func (m tuiModel) items() ([]list.Item, error) {
 		if m.view == viewDisabled && (state.Enabled || state.Partial) {
 			continue
 		}
-		items = append(items, skillItem{skill: skill, state: state})
+		skills = append(skills, skillItem{skill: skill, state: state})
+	}
+	sort.SliceStable(skills, func(left, right int) bool {
+		a, b := skills[left].skill, skills[right].skill
+		if m.sort == sortRepository {
+			aRepo, bRepo := strings.ToLower(a.Repository), strings.ToLower(b.Repository)
+			if aRepo != bRepo {
+				return aRepo < bRepo
+			}
+		}
+		aName, bName := strings.ToLower(a.Name), strings.ToLower(b.Name)
+		if aName != bName {
+			return aName < bName
+		}
+		return a.Name < b.Name
+	})
+	items := make([]list.Item, len(skills))
+	for index := range skills {
+		items[index] = skills[index]
 	}
 	return items, nil
 }
