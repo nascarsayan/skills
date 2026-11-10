@@ -15,7 +15,7 @@ The site is an Astro repo in git: `main` is the live site. A page is live only o
 4. `dev web build` builds a preview into `.dist-dev/`; fix every error it reports.
 5. Check the rendered page in a real browser (headless Firefox) and look at the screenshot before reporting.
 6. Commit in the site repo, then `dev web deploy` (refuses uncommitted changes; builds `dist/`, which Caddy serves at once).
-7. Verify: `curl --cacert ~/ws/web/caddy-root.crt -sI https://sayann-vm.cerebras.aws/<slug>/` returns 200. Report the URL.
+7. Verify: `curl --cacert "$(dev cd dev)/web/caddy-root.crt" -sI "https://$(hostname -f)/<slug>/"` returns 200. Report the URL.
 
 ## Standalone app
 
@@ -28,4 +28,4 @@ Readers comment per page or per section (the form at the end of every article). 
 1. `dev web comments list` shows threads whose last message is not llm-bot's (`--all`, `--page <slug>`).
 2. Answer each from the page's content and sources: `dev web comments reply <id> "<text>"`. It prints the comment's URL.
 
-Server and Caddy config: `dev web up` (unit `dev-web-comments.service`).
+Server and Caddy: `dev web up` (units `dev-web-comments` (user) and `dev-web-caddy` (system)). Headless Firefox needs the site CA: `dev cd dev`/web/caddy-root.crt.
