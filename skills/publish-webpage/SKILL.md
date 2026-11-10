@@ -19,7 +19,7 @@ The site is an Astro repo in git: `main` is the live site. A page is live only o
 
 ## Standalone app
 
-Self-contained HTML apps live in `~/ws/www/<slug>/`, served as-is. Register each in two places: `STANDALONE` in the site's `src/config/routes.ts` (lists it on /apps/), and the `@standalone` matcher in the dev repo's `web/Caddyfile`. Then `dev self install`, `dev web up` (deploys the Caddyfile and reloads Caddy), and commit + `dev web deploy` for the site.
+Self-contained HTML apps live in `~/ws/www/<slug>/`, served as-is. Register each in two places: `STANDALONE` in the site's `src/config/routes.ts` (lists it on /apps/), and the `@standalone` matcher in the dev repo's `web/Caddyfile`. Then `dev web up` (reloads Caddy; it reads the Caddyfile from the repo), and commit + `dev web deploy` for the site. Apps open in a new tab from the site, since they have no way back.
 
 ## Comments
 
