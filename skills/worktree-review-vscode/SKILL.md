@@ -5,8 +5,6 @@ description: Read and respond to existing inline comments stored by Git Worktree
 
 # Worktree review for VS Code
 
-Set `SKILL_ROOT` to the absolute directory containing this `SKILL.md` before running any packaged helper. This contract is independent of the agent harness.
-
 ## Scope gate
 
 Use this skill only for existing local comments created through Git Worktree Diff. The user must explicitly mention comments left in the worktree, comments left locally in GWQ, Git Worktree Diff, or `.worktree-review`.
@@ -40,12 +38,11 @@ The reviewer sees your replies inline in the editor, live.
 
 ## Locate the tooling
 
-Use the helper source packaged with this skill:
+Use `dev review` (`dev review --help` lists every subcommand). From inside the
+worktree it finds `.worktree-review` itself; elsewhere pass `--dir <worktree>`.
 
 ```sh
-WT=$(git rev-parse --show-toplevel)
-REVIEW="$SKILL_ROOT/scripts/review.js"
-node "$REVIEW" --dir "$WT" counts
+dev review counts
 ```
 
 Read `.worktree-review/threads.json` by hand only as a last resort. The CLI keeps IDs, timestamps, status transitions, and the rendered `DISCUSSION.md` consistent.
@@ -55,7 +52,7 @@ Read `.worktree-review/threads.json` by hand only as a last resort. The CLI keep
 ### 1. Read what is waiting
 
 ```sh
-node "$REVIEW" --dir "$WT" list --awaiting --json
+dev review list --awaiting --json
 ```
 
 `--awaiting` gives the threads whose last comment is **not** from a bot, so those
@@ -65,7 +62,7 @@ everything including resolved ones.
 For one thread with its full history:
 
 ```sh
-node "$REVIEW" --dir "$WT" show t3 --json
+dev review show t3 --json
 ```
 
 ### 2. Understand each comment in context
@@ -90,7 +87,7 @@ another reviewer may have pushed back on it.
 Reply through stdin, so markdown and newlines survive:
 
 ```sh
-node "$REVIEW" --dir "$WT" reply t3 \
+dev review reply t3 \
   --agent "$AGENT_HARNESS" --model "$AGENT_MODEL" \
   --action accepted --status addressed --body - <<'EOF'
 Changed `parseRemote` to strip the port from the host. A scheme URL now splits on
@@ -111,7 +108,7 @@ result in the reply. Do not write "fixed" for a change you did not run.
 ### 5. Refresh the discussion
 
 Every `reply`, `add` and `status` rewrites `.worktree-review/DISCUSSION.md`. Run
-`node "$REVIEW" --dir "$WT" render` if you edited the store any other way.
+`dev review render` if you edited the store any other way.
 
 
 ## Reply style
