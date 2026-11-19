@@ -19,7 +19,7 @@ The site is an Astro repo in git: `main` is the live site. A page is live only o
 
 ## Standalone app
 
-Self-contained web apps live in their own source folder under `~/ws/Sites/<app>/` (`dev cd sites`), served as-is (git metadata and .env files hidden). Register each in two places: `STANDALONE` in the site's `src/config/routes.ts` (lists it on /apps/), and a `handle_path /<slug>/*` block in the dev repo's `web/Caddyfile` whose `root` is the app's served folder under `{$DEV_WEB_SITES}`. Then `dev web up` (reloads Caddy; it reads the Caddyfile from the repo), and commit + `dev web deploy` for the site. Apps open in a new tab from the site, since they have no way back.
+Self-contained web apps live in the sandbox repo under `sayann/Sites/<App>/` (PascalCase; `dev cd sites`), served as-is (git metadata and .env files hidden). Register each in two places: `STANDALONE` in the site's `src/config/routes.ts` (lists it on /apps/), and a `handle_path /<slug>/*` block in the dev repo's `web/Caddyfile` whose `root` is the app's served folder under `{$DEV_WEB_SITES}`. Then `dev web up` (reloads Caddy; it reads the Caddyfile from the repo), and commit + `dev web deploy` for the site. Apps open in a new tab from the site, since they have no way back.
 
 ## Comments
 
