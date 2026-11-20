@@ -38,11 +38,11 @@ The reviewer sees your replies inline in the editor, live.
 
 ## Locate the tooling
 
-Use `dev git review` (`dev git review --help` lists every subcommand). From inside the
+Use `valet git review` (`valet git review --help` lists every subcommand). From inside the
 worktree it finds `.worktree-review` itself; elsewhere pass `--dir <worktree>`.
 
 ```sh
-dev git review counts
+valet git review counts
 ```
 
 Read `.worktree-review/threads.json` by hand only as a last resort. The CLI keeps IDs, timestamps, status transitions, and the rendered `DISCUSSION.md` consistent.
@@ -52,7 +52,7 @@ Read `.worktree-review/threads.json` by hand only as a last resort. The CLI keep
 ### 1. Read what is waiting
 
 ```sh
-dev git review list --awaiting --json
+valet git review list --awaiting --json
 ```
 
 `--awaiting` gives the threads whose last comment is **not** from a bot, so those
@@ -62,7 +62,7 @@ everything including resolved ones.
 For one thread with its full history:
 
 ```sh
-dev git review show t3 --json
+valet git review show t3 --json
 ```
 
 ### 2. Understand each comment in context
@@ -87,7 +87,7 @@ another reviewer may have pushed back on it.
 Reply through stdin, so markdown and newlines survive:
 
 ```sh
-dev git review reply t3 \
+valet git review reply t3 \
   --agent "$AGENT_HARNESS" --model "$AGENT_MODEL" \
   --action accepted --status addressed --body - <<'EOF'
 Changed `parseRemote` to strip the port from the host. A scheme URL now splits on
@@ -108,7 +108,7 @@ result in the reply. Do not write "fixed" for a change you did not run.
 ### 5. Refresh the discussion
 
 Every `reply`, `add` and `status` rewrites `.worktree-review/DISCUSSION.md`. Run
-`dev git review render` if you edited the store any other way.
+`valet git review render` if you edited the store any other way.
 
 
 ## Reply style
